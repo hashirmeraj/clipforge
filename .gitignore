@@ -1,0 +1,10 @@
+node_modules
+dist
+exports
+public/ffmpeg
+*.mp4
+*.mov
+*.webm
+.vercel
+.env
+.env.local
