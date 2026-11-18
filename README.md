@@ -11,7 +11,7 @@ Everything runs locally in the user's browser — no backend, no cloud storage, 
 - **Automatic Clip Generator**: Multi-select clip durations (`15s`–`3m` + custom), non-overlapping clip scheduling, intelligent context padding, and ranked highlight timeline.
 - **Smart Vertical Video Editor**: `9:16`, `16:9`, and `1:1` output with 5 layouts (`Smart Crop`, `Center Crop`, `Blurred Background`, `Stacked + Facecam`, `Full Gameplay`), draggable manual cropper, 7 gaming presets, custom intro/ending overlays, color punch, and local background music mixing.
 - **Local Whisper Auto-Captions**: Transformers.js Whisper (`WebGPU` with automatic `CPU WASM` fallback), 6 styled caption presets (MrBeast Bold, Gaming Neon, Minimal White, Yellow Keywords, Karaoke Animated, Clean Cinematic), and full manual transcript editing.
-- **Client-Side MP4 & ZIP Export**: Real H.264/AAC MP4 rendering via FFmpeg.wasm (`720p`/`1080p`, `30`/`60 FPS`, `Standard`/`High`/`Maximum`), batch rendering, downloadable thumbnails, and `.zip` export bundles.
+- **Client-Side MP4 & ZIP Export + View Data SEO Pack**: Real H.264/AAC MP4 rendering via FFmpeg.wasm (`720p`/`1080p`, `30`/`60 FPS`, `Standard`/`High`/`Maximum`), batch rendering, downloadable thumbnails, `.zip` export bundles, and a **View Data** modal per clip generating editable video titles, hook alternatives, descriptions, trending hashtags, and SEO keywords.
 - **Local Projects & Settings**: Metadata-only persistence in `LocalStorage` with automatic Blob URL cleanup.
 
 ## Getting Started
