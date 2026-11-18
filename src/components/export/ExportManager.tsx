@@ -13,6 +13,7 @@ import {
   X,
   Film,
   Loader2,
+  FileText,
 } from 'lucide-react';
 import { useClipForge } from '../../context/ClipForgeContext';
 import type {
@@ -30,6 +31,7 @@ import {
 } from '../../services/ffmpegService';
 import { generateClipThumbnailBlob } from '../../services/captionRendererService';
 import { EmptyProjectGuard } from '../common/EmptyProjectGuard';
+import { ClipDataModal } from './ClipDataModal';
 import { formatBytes, formatTime, generateId, sanitizeFilename } from '../../utils/format';
 
 export const ExportManager: React.FC = () => {
@@ -55,6 +57,7 @@ export const ExportManager: React.FC = () => {
   const [zipProgress, setZipProgress] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<{ url: string; title: string } | null>(null);
   const [thumbBusyId, setThumbBusyId] = useState<string | null>(null);
+  const [dataModalClipId, setDataModalClipId] = useState<string | null>(null);
 
   const cancelledRef = useRef(false);
 
@@ -521,6 +524,15 @@ export const ExportManager: React.FC = () => {
                   </button>
 
                   <button
+                    onClick={() => setDataModalClipId(clip.id)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-500/15 px-2.5 py-1.5 text-xs font-medium text-violet-200 hover:bg-violet-500/25"
+                    title="View generated video title, description, trending hashtags & SEO keywords"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-violet-300" />
+                    View Data
+                  </button>
+
+                  <button
                     onClick={() => handleDownloadThumbnail(clip)}
                     disabled={thumbBusyId === clip.id}
                     className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-white/[0.08]"
@@ -630,6 +642,26 @@ export const ExportManager: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Clip SEO & Publishing Data Modal */}
+      {(() => {
+        const modalClip = dataModalClipId ? clips.find((c) => c.id === dataModalClipId) : null;
+        if (!modalClip) return null;
+        const linkedHighlight = modalClip.highlightId
+          ? activeProject.highlights.find((h) => h.id === modalClip.highlightId)
+          : undefined;
+        return (
+          <ClipDataModal
+            clip={modalClip}
+            project={activeProject}
+            highlight={linkedHighlight}
+            onSaveMetadata={(publishingMeta) =>
+              updateClip(activeProject.id, modalClip.id, (c) => ({ ...c, publishingMeta }))
+            }
+            onClose={() => setDataModalClipId(null)}
+          />
+        );
+      })()}
 
       {/* Rendered MP4 Verification Modal */}
       {previewUrl && (

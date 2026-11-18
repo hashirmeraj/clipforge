@@ -199,6 +199,16 @@ export interface ClipColorGrade {
   brightness: number; // -0.15..0.15 (0 = normal)
 }
 
+export interface ClipPublishingMetadata {
+  title: string;
+  alternativeTitles: string[];
+  description: string;
+  hashtags: string[];
+  keywords: string[];
+  trendNotes: string[];
+  generatedAt: string;
+}
+
 export interface Clip {
   id: string;
   title: string;
@@ -223,6 +233,7 @@ export interface Clip {
   bgMusicName?: string;
   bgMusicVolume: number;  // 0..1
   selected: boolean;
+  publishingMeta?: ClipPublishingMetadata;
 }
 
 export interface ExportSettings {
