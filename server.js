@@ -21,6 +21,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'ClipForge Unified Server', timestamp: Date.now() });
 });
 
+// Helper: Resolve cookies file if provided via env or disk
+function getCookieFilePath() {
+  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 10) {
+    const p = path.join(os.tmpdir(), 'yt_cookies.txt');
+    try {
+      fs.writeFileSync(p, process.env.YOUTUBE_COOKIES.trim());
+      return p;
+    } catch {
+      return null;
+    }
+  }
+  const localFile = path.join(__dirname, 'cookies.txt');
+  if (fs.existsSync(localFile)) {
+    return localFile;
+  }
+  return null;
+}
+
 // Video info endpoint
 app.get('/api/info', (req, res) => {
   const url = req.query.url;
@@ -28,15 +46,19 @@ app.get('/api/info', (req, res) => {
     return res.status(400).json({ error: 'Missing url query parameter' });
   }
 
-  const ytdlp = spawn('yt-dlp', [
+  const cookiePath = getCookieFilePath();
+  const infoArgs = [
     '--dump-json',
     '--skip-download',
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
     'youtube:player_client=tv_embedded,android,ios',
+    ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
-  ]);
+  ];
+
+  const ytdlp = spawn('yt-dlp', infoArgs);
   let stdoutData = '';
   let stderrData = '';
 
@@ -146,12 +168,14 @@ app.get('/api/stream', (req, res) => {
   const tempId = crypto.randomBytes(6).toString('hex');
   const tempFilePath = path.join(os.tmpdir(), `clip_${Date.now()}_${tempId}.mp4`);
 
+  const cookiePath = getCookieFilePath();
   const args = [
     '--no-playlist',
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
     'youtube:player_client=tv_embedded,android,ios',
+    ...(cookiePath ? ['--cookies', cookiePath] : []),
     '--download-sections',
     section,
     '-f',
