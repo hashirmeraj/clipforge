@@ -97,7 +97,7 @@ app.get('/api/info', (req, res) => {
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
     '--extractor-args',
-    'youtube:player-client=mweb,tv,web_safari',
+    'youtube:player-client=android,ios,mweb,tv_embedded',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
@@ -109,10 +109,12 @@ app.get('/api/info', (req, res) => {
 
   ytdlp.stdout.on('data', (d) => {
     stdoutData += d.toString();
+    process.stdout.write(d);
   });
 
   ytdlp.stderr.on('data', (d) => {
     stderrData += d.toString();
+    process.stderr.write(d);
   });
 
   ytdlp.on('close', (code) => {
@@ -235,7 +237,7 @@ app.get('/api/stream', (req, res) => {
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
     '--extractor-args',
-    'youtube:player-client=mweb,tv,web_safari',
+    'youtube:player-client=android,ios,mweb,tv_embedded',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(isFullVideo
@@ -246,7 +248,7 @@ app.get('/api/stream', (req, res) => {
           '--force-keyframes-at-cuts',
         ]),
     '-f',
-    'best[height<=720]/bestvideo[height<=720]+bestaudio/best',
+    'best[height<=720]/best[ext=mp4]/bestvideo[height<=720]+bestaudio/best',
     '--merge-output-format',
     'mp4',
     '--postprocessor-args',
@@ -265,8 +267,13 @@ app.get('/api/stream', (req, res) => {
   const ytdlp = spawn('yt-dlp', args);
   let stderrOutput = '';
 
+  ytdlp.stdout.on('data', (d) => {
+    process.stdout.write(d);
+  });
+
   ytdlp.stderr.on('data', (d) => {
     stderrOutput += d.toString();
+    process.stderr.write(d);
   });
 
   const cleanup = () => {
