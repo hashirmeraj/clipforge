@@ -16,6 +16,8 @@ import {
   Square,
   Clock,
   Volume2,
+  Zap,
+  Loader2,
 } from 'lucide-react';
 import { parseYouTubeUrl } from '../../utils/format';
 
@@ -32,6 +34,11 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
   const [thumbError, setThumbError] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dropInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 1-Click Server Stream state (Solution 1)
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamProgress, setStreamProgress] = useState('');
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   // Live Screen / Tab Recording state (Solution 2)
   const [isRecording, setIsRecording] = useState(false);
@@ -86,6 +93,60 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
   const cobaltHelperUrl = parsed.valid
     ? `https://cobalt.tools/#${encodeURIComponent(parsed.watchUrl || urlInput)}`
     : 'https://cobalt.tools/';
+
+  // Solution 1: 1-Click Server Stream directly into browser memory
+  const handle1ClickStream = async () => {
+    if (!parsed.valid || !urlInput.trim()) return;
+    setIsStreaming(true);
+    setStreamError(null);
+    setStreamProgress('Connecting to Railway stream engine...');
+
+    try {
+      const endpoint = window.location.origin.includes('railway')
+        ? `/api/stream?url=${encodeURIComponent(urlInput)}&duration=${targetDuration || 60}`
+        : `https://clipforge-production-1b2a5d93.up.railway.app/api/stream?url=${encodeURIComponent(urlInput)}&duration=${targetDuration || 60}`;
+
+      setStreamProgress('Extracting video stream (720p H.264 / AAC)...');
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        let errMessage = 'Stream extraction failed.';
+        try {
+          const errJson = await response.json();
+          errMessage = errJson.details || errJson.error || errMessage;
+        } catch {
+          errMessage = `Server error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errMessage);
+      }
+
+      setStreamProgress('Receiving video buffer into browser memory...');
+      const blob = await response.blob();
+
+      if (blob.size < 1024) {
+        throw new Error('Received an empty video stream from the server.');
+      }
+
+      setStreamProgress('Loading into ClipForge AI engine...');
+      const cleanName = parsed.videoId
+        ? `YouTube_${parsed.videoId}_${Date.now()}.mp4`
+        : `YouTube_Clip_${Date.now()}.mp4`;
+
+      const videoFile = new File([blob], cleanName, { type: 'video/mp4' });
+      setIsStreaming(false);
+      setStreamProgress('');
+      onFileSelect(videoFile);
+    } catch (err) {
+      console.error('[1-Click Stream Error]', err);
+      setStreamError(
+        err instanceof Error
+          ? err.message
+          : 'Stream server is starting up or video is restricted. You can also use live recording below.'
+      );
+      setIsStreaming(false);
+      setStreamProgress('');
+    }
+  };
 
   // Solution 2: Start direct browser tab recording of the embedded YouTube player
   const startEmbeddedTabCapture = async () => {
@@ -273,14 +334,14 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
         )}
       </div>
 
-      {/* Video Preview & Solution 2 Direct Embedded Capture */}
+      {/* Video Preview & Actions */}
       {parsed.valid && parsed.videoId && (
-        <div className="space-y-3.5 rounded-xl border border-violet-500/30 bg-[#0e1118] p-4 shadow-xl">
+        <div className="space-y-4 rounded-xl border border-violet-500/30 bg-[#0e1118] p-4 shadow-xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-zinc-200">Embedded Video Player</span>
-              <span className="rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-300">
-                100% Direct In-Browser Clipper
+              <span className="text-xs font-semibold text-zinc-200">YouTube Video Preview</span>
+              <span className="rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-300 flex items-center gap-1">
+                <Sparkles className="h-2.5 w-2.5" /> 1-Click Ready
               </span>
             </div>
             <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
@@ -390,89 +451,108 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
             )}
           </div>
 
-          {/* Solution 2 Action Bar */}
-          {!isRecording ? (
-            <div className="space-y-3 rounded-xl border border-violet-500/25 bg-violet-950/20 p-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Radio className="h-4 w-4 text-violet-400 animate-pulse" />
-                  <div>
-                    <h4 className="text-xs font-bold text-white">
-                      Direct Embedded Clip Recording (Zero Downloads)
-                    </h4>
-                    <p className="text-[11px] text-zinc-400">
-                      Record live from the player into browser memory with full audio &amp; video
-                    </p>
-                  </div>
+          {/* PRIMARY: 1-Click Stream & Clip Box */}
+          <div className="rounded-xl border border-violet-500/40 bg-gradient-to-br from-violet-950/40 to-fuchsia-950/20 p-4 shadow-lg space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-amber-400 fill-amber-400" />
+                <div>
+                  <h4 className="text-xs font-bold text-white">
+                    1-Click Direct Stream &amp; Clip (Recommended)
+                  </h4>
+                  <p className="text-[11px] text-zinc-400">
+                    Extracts &amp; pipes video directly into browser memory — zero downloads, zero prompts!
+                  </p>
                 </div>
+              </div>
 
-                {/* Duration Picker */}
-                <div className="flex items-center gap-1.5 text-xs text-zinc-300">
-                  <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                  <span className="text-[11px] text-zinc-400">Length:</span>
-                  {[15, 30, 60].map((dur) => (
-                    <button
-                      key={dur}
-                      type="button"
-                      onClick={() => setTargetDuration(dur)}
-                      className={`rounded px-2 py-1 text-[11px] font-semibold transition ${
-                        targetDuration === dur
-                          ? 'bg-violet-600 text-white shadow-sm'
-                          : 'bg-white/5 text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {dur}s
-                    </button>
-                  ))}
+              {/* Duration Picker */}
+              <div className="flex items-center gap-1 text-xs text-zinc-300">
+                <Clock className="h-3 w-3 text-zinc-400" />
+                <span className="text-[10px] text-zinc-400">Clip:</span>
+                {[15, 30, 60, 90].map((dur) => (
                   <button
+                    key={dur}
                     type="button"
-                    onClick={() => setTargetDuration(0)}
-                    className={`rounded px-2 py-1 text-[11px] font-semibold transition ${
-                      targetDuration === 0
+                    onClick={() => setTargetDuration(dur)}
+                    className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
+                      targetDuration === dur
                         ? 'bg-violet-600 text-white shadow-sm'
                         : 'bg-white/5 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    Manual
+                    {dur}s
                   </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 1-Click Stream Action Button */}
+            <button
+              type="button"
+              disabled={isStreaming}
+              onClick={handle1ClickStream}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/30 transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
+            >
+              {isStreaming ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{streamProgress || 'Streaming Video...'}</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4 fill-amber-300 text-amber-300" />
+                  <span>⚡ 1-Click Stream &amp; Clip Video Now</span>
+                </>
+              )}
+            </button>
+
+            {streamError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-red-300">Stream Connection Notice</p>
+                  <p className="text-[11px] leading-relaxed">{streamError}</p>
+                  <p className="text-[11px] text-zinc-400">
+                    You can also use the Live Player Capture below or drop a local file.
+                  </p>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Start Capture Button */}
-              <button
-                type="button"
-                onClick={startEmbeddedTabCapture}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/25 transition hover:brightness-110 active:scale-[0.99]"
-              >
-                <Radio className="h-4 w-4" />
-                Capture &amp; Clip from Embedded Player Now
-              </button>
-
-              <div className="flex items-center justify-between text-[11px] text-zinc-400 px-1">
-                <span className="flex items-center gap-1">
-                  <Volume2 className="h-3.5 w-3.5 text-emerald-400" />
-                  Check "Share tab audio" in popup for Whisper captions
+          {/* SECONDARY: Live In-Browser Player Recording (Solution 2) */}
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Radio className="h-3.5 w-3.5 text-red-400" />
+                <span className="text-xs font-semibold text-zinc-300">
+                  Alternative: Live Player Screen Capture
                 </span>
-                <span className="text-zinc-500">100% Private in Browser</span>
               </div>
+              <span className="text-[10px] text-zinc-500">100% In-Browser</span>
             </div>
-          ) : (
-            <div className="rounded-lg border border-red-500/20 bg-red-950/20 p-2.5 text-xs text-red-300 flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Radio className="h-4 w-4 text-red-400 animate-pulse" />
-                Play the video above now. When you stop, it will immediately open in ClipForge's AI editor!
-              </span>
-              <button
-                type="button"
-                onClick={stopRecording}
-                className="rounded bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500"
-              >
-                Done
-              </button>
-            </div>
-          )}
 
-          {/* Feedback & Warnings */}
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Play the embedded video above and record the live segment directly into browser memory.
+            </p>
+
+            <button
+              type="button"
+              onClick={startEmbeddedTabCapture}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white"
+            >
+              <Radio className="h-3.5 w-3.5 text-red-400 animate-pulse" />
+              Capture from Player
+            </button>
+
+            <div className="flex items-center gap-1 text-[11px] text-zinc-500 pt-1">
+              <Volume2 className="h-3 w-3 text-emerald-400" />
+              Tip: Keep "Share tab audio" checked in browser prompt for speech captions
+            </div>
+          </div>
+
+          {/* Error / Warning feedback for recording */}
           {recordingError && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -487,9 +567,9 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
             </div>
           )}
 
-          {/* Alternative 1-Click Download helper */}
-          <div className="flex items-center justify-between border-t border-white/5 pt-2.5 text-[11px] text-zinc-400">
-            <span>Or prefer the full original file?</span>
+          {/* 1-Click External Download helper */}
+          <div className="flex items-center justify-between border-t border-white/5 pt-2 text-[11px] text-zinc-400">
+            <span>Need the entire uncompressed file?</span>
             <a
               href={cobaltHelperUrl}
               target="_blank"

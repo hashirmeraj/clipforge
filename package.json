@@ -8,6 +8,7 @@
     "dev": "vite",
     "prebuild": "node scripts/copy-ffmpeg.mjs",
     "build": "tsc -b && vite build",
+    "start": "node server.js",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -16,6 +17,8 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@huggingface/transformers": "^3.4.0",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
@@ -23,6 +26,8 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
