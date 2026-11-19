@@ -249,7 +249,7 @@ app.get('/api/stream', (req, res) => {
         ]),
     '-f',
     'best[height<=720]/best[ext=mp4]/bestvideo[height<=720]+bestaudio/best',
-    '--merge-output-format',
+    '--remux-video',
     'mp4',
     '--postprocessor-args',
     'ffmpeg:-movflags +faststart',
