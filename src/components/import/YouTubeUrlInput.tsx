@@ -510,14 +510,37 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
             </button>
 
             {streamError && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400 flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-semibold text-red-300">Stream Connection Notice</p>
-                  <p className="text-[11px] leading-relaxed">{streamError}</p>
-                  <p className="text-[11px] text-zinc-400">
-                    You can also use the Live Player Capture below or drop a local file.
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                <div className="space-y-1.5 flex-1">
+                  <p className="font-semibold text-amber-200">
+                    {streamError.toLowerCase().includes('bot')
+                      ? 'YouTube Datacenter Protection Detected'
+                      : 'Stream Server Notice'}
                   </p>
+                  <p className="text-[11px] text-zinc-300 leading-relaxed">
+                    {streamError.toLowerCase().includes('bot')
+                      ? 'YouTube blocks automated server extraction from cloud datacenter IPs for this video. Use the Live Player Capture below to record the clip directly from your browser tab with zero restrictions!'
+                      : streamError}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={startEmbeddedTabCapture}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1 text-[11px] font-bold text-black shadow transition hover:bg-amber-400"
+                    >
+                      <Radio className="h-3 w-3" />
+                      Capture Live Player Now
+                    </button>
+                    <a
+                      href={cobaltHelperUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-200 hover:bg-white/20"
+                    >
+                      Download MP4 via Cobalt <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
                 </div>
               </div>
             )}
