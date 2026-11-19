@@ -95,8 +95,6 @@ app.get('/api/info', (req, res) => {
     '--geo-bypass',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-    '--extractor-args',
-    'youtube:player_client=tv_embedded,android,ios',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
@@ -232,8 +230,6 @@ app.get('/api/stream', (req, res) => {
     '--geo-bypass',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-    '--extractor-args',
-    'youtube:player_client=tv_embedded,android,ios',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(isFullVideo
