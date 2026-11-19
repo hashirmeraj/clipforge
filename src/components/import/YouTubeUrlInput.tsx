@@ -133,6 +133,7 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
         : `YouTube_Clip_${Date.now()}.mp4`;
 
       const videoFile = new File([blob], cleanName, { type: 'video/mp4' });
+      (videoFile as any)._customDuration = targetDuration || 60;
       setIsStreaming(false);
       setStreamProgress('');
       onFileSelect(videoFile);
@@ -218,6 +219,7 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
           : `YouTube_Clip_${Date.now()}.${extension}`;
 
         const capturedFile = new File([blob], cleanName, { type: blob.type });
+        (capturedFile as any)._customDuration = recordSeconds > 0 ? recordSeconds : targetDuration || 30;
 
         setIsRecording(false);
         setRecordSeconds(0);

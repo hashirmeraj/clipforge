@@ -39,6 +39,56 @@ export function validateVideoFile(file: File): { valid: boolean; error?: string 
 }
 
 /**
+ * Generates an instant canvas fallback thumbnail data URL with video title
+ * if direct frame extraction is unavailable or times out.
+ */
+export function createFallbackThumbnail(title: string): string {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    // Dark sleek gradient background
+    const grad = ctx.createLinearGradient(0, 0, 640, 360);
+    grad.addColorStop(0, '#0f172a');
+    grad.addColorStop(1, '#1e1b4b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 640, 360);
+
+    // Decorative center circle
+    ctx.beginPath();
+    ctx.arc(320, 160, 48, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.25)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#a855f7';
+    ctx.stroke();
+
+    // Play icon triangle
+    ctx.beginPath();
+    ctx.moveTo(312, 140);
+    ctx.lineTo(336, 160);
+    ctx.lineTo(312, 180);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    // Clean title text
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.textAlign = 'center';
+    const cleanTitle = title.length > 40 ? title.slice(0, 37) + '...' : title;
+    ctx.fillText(cleanTitle, 320, 240);
+
+    return canvas.toDataURL('image/jpeg', 0.85);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Captures a single JPEG Blob URL from a video element at a given timestamp.
  */
 export async function captureVideoFrameBlobUrl(
@@ -48,6 +98,11 @@ export async function captureVideoFrameBlobUrl(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const safeTime = Math.max(0, Math.min(timeSec, Math.max(0, (video.duration || 0) - 0.1)));
+    let seekTimer: number | null = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Frame seek timed out.'));
+    }, 3500);
+
     const onSeeked = () => {
       cleanup();
       try {
@@ -85,6 +140,10 @@ export async function captureVideoFrameBlobUrl(
       reject(new Error('Video decoding error while capturing thumbnail frame.'));
     };
     const cleanup = () => {
+      if (seekTimer) {
+        window.clearTimeout(seekTimer);
+        seekTimer = null;
+      }
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
     };
@@ -117,10 +176,11 @@ export async function loadLocalVideoFile(
   const objectUrl = URL.createObjectURL(file);
 
   const video = document.createElement('video');
-  video.preload = 'metadata';
+  video.preload = 'auto';
   video.muted = true;
   video.playsInline = true;
   video.src = objectUrl;
+  video.load();
 
   try {
     onProgress?.(40, 'Reading video container metadata...');
@@ -131,36 +191,86 @@ export async function loadLocalVideoFile(
             'Timed out reading video metadata. Your browser may not support the codec inside this file (e.g., HEVC/H.265 MOV). Try H.264 MP4 or WebM.'
           )
         );
-      }, 20000);
+      }, 15000);
+
+      let fallbackDurationTimer: number | null = null;
+
+      const finishSuccess = () => {
+        window.clearTimeout(timeout);
+        if (fallbackDurationTimer) {
+          window.clearTimeout(fallbackDurationTimer);
+          fallbackDurationTimer = null;
+        }
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        resolve();
+      };
 
       const resolveFiniteDuration = () => {
         if (Number.isFinite(video.duration) && video.duration > 0) {
-          window.clearTimeout(timeout);
-          resolve();
+          finishSuccess();
           return;
         }
+
+        // Check if an explicit duration was attached to the File object (e.g. from YouTube 1-click or recorder)
+        const customDur = (file as any)._customDuration;
+        if (typeof customDur === 'number' && customDur > 0) {
+          try {
+            Object.defineProperty(video, 'duration', { value: customDur, configurable: true });
+          } catch {}
+          finishSuccess();
+          return;
+        }
+
         // Standard workaround for MediaRecorder / unindexed WebM files whose header reports Infinity
         const onDurationFixed = () => {
-          video.removeEventListener('timeupdate', onDurationFixed);
-          video.removeEventListener('durationchange', onDurationFixed);
-          window.clearTimeout(timeout);
+          cleanupDurationListeners();
           if (Number.isFinite(video.duration) && video.duration > 0) {
             video.currentTime = 0;
-            resolve();
+            finishSuccess();
           } else {
-            reject(
-              new Error('Could not determine video duration. The file may be corrupted or unindexed.')
-            );
+            // Apply fallback estimate based on filesize or default duration
+            const est = Math.max(10, Math.round(file.size / (1024 * 350)));
+            try {
+              Object.defineProperty(video, 'duration', { value: est, configurable: true });
+            } catch {}
+            video.currentTime = 0;
+            finishSuccess();
           }
         };
+
+        const cleanupDurationListeners = () => {
+          video.removeEventListener('timeupdate', onDurationFixed);
+          video.removeEventListener('durationchange', onDurationFixed);
+          video.removeEventListener('seeked', onDurationFixed);
+        };
+
         video.addEventListener('timeupdate', onDurationFixed, { once: true });
         video.addEventListener('durationchange', onDurationFixed, { once: true });
-        video.currentTime = 1e7;
+        video.addEventListener('seeked', onDurationFixed, { once: true });
+
+        // Safety fallback timer: if seeking doesn't resolve duration within 2 seconds, don't wait for 15s timeout!
+        fallbackDurationTimer = window.setTimeout(() => {
+          cleanupDurationListeners();
+          const est = Math.max(10, Math.round(file.size / (1024 * 350)));
+          try {
+            Object.defineProperty(video, 'duration', { value: est, configurable: true });
+          } catch {}
+          finishSuccess();
+        }, 2000);
+
+        try {
+          video.currentTime = 1e7;
+        } catch {
+          // If seeking fails, trigger fixed duration fallback immediately
+          onDurationFixed();
+        }
       };
 
       video.onloadedmetadata = resolveFiniteDuration;
       video.onerror = () => {
         window.clearTimeout(timeout);
+        if (fallbackDurationTimer) window.clearTimeout(fallbackDurationTimer);
         reject(
           new Error(
             'Browser could not decode this video file. Ensure it uses a browser-supported codec (H.264/VP9/AV1 in MP4, MOV, or WebM).'
@@ -170,8 +280,15 @@ export async function loadLocalVideoFile(
     });
 
     onProgress?.(75, 'Extracting preview frame thumbnail...');
-    const thumbTime = Math.min(Math.max(0.5, video.duration * 0.1), Math.max(0.1, video.duration - 0.2));
-    const thumbnailUrl = await captureVideoFrameBlobUrl(video, thumbTime, 560);
+    const thumbTime = Math.min(Math.max(0.5, (video.duration || 10) * 0.1), Math.max(0.1, (video.duration || 10) - 0.2));
+    
+    let thumbnailUrl: string;
+    try {
+      thumbnailUrl = await captureVideoFrameBlobUrl(video, thumbTime, 560);
+    } catch (err) {
+      console.warn('[VideoLoader] Frame capture failed, generating fallback thumbnail:', err);
+      thumbnailUrl = createFallbackThumbnail(file.name);
+    }
 
     // Reasonable FPS baseline (browsers don't expose exact container FPS synchronously without full decode)
     const fpsEstimate = video.videoHeight >= 1080 ? 60 : 30;
@@ -186,9 +303,9 @@ export async function loadLocalVideoFile(
         filename: file.name,
         size: file.size,
         mimeType: file.type || 'video/mp4',
-        duration: video.duration,
-        width: video.videoWidth,
-        height: video.videoHeight,
+        duration: Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (file as any)._customDuration || 60,
+        width: video.videoWidth || 1280,
+        height: video.videoHeight || 720,
         fpsEstimate,
         sourceType: 'local',
       },

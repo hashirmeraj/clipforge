@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,46 +81,99 @@ app.get('/api/stream', (req, res) => {
   };
 
   const section = `*${formatTime(startSec)}-${formatTime(endSec)}`;
+  const tempId = crypto.randomBytes(6).toString('hex');
+  const tempFilePath = path.join(os.tmpdir(), `clip_${Date.now()}_${tempId}.mp4`);
 
   const args = [
+    '--no-playlist',
+    '--no-warnings',
     '--download-sections',
     section,
     '-f',
-    'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best',
+    'bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best',
     '--force-keyframes-at-cuts',
+    '--merge-output-format',
+    'mp4',
+    '--postprocessor-args',
+    'ffmpeg:-movflags +faststart',
     '-o',
-    '-',
+    tempFilePath,
     url,
   ];
 
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Content-Disposition', 'inline; filename="youtube_clip.mp4"');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  console.log(`[ClipForge Stream] Starting download: ${url} (range: ${section}) -> ${tempFilePath}`);
 
   const ytdlp = spawn('yt-dlp', args);
-
-  ytdlp.stdout.pipe(res);
-
   let stderrOutput = '';
+
   ytdlp.stderr.on('data', (d) => {
     stderrOutput += d.toString();
   });
 
+  const cleanup = () => {
+    try {
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+    } catch (err) {
+      console.error('[ClipForge Stream] Temp file cleanup error:', err.message);
+    }
+  };
+
+  req.on('close', () => {
+    if (!ytdlp.killed) {
+      ytdlp.kill();
+    }
+    // Clean up after 5 seconds to ensure any pending file handles close
+    setTimeout(cleanup, 5000);
+  });
+
   ytdlp.on('error', (err) => {
     console.error('[yt-dlp spawn error]', err);
+    cleanup();
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to start yt-dlp process', details: err.message });
     }
   });
 
   ytdlp.on('close', (code) => {
-    if (code !== 0 && !res.headersSent) {
-      res.status(500).json({ error: 'Stream extraction failed', details: stderrOutput.slice(0, 300) });
+    if (code !== 0) {
+      cleanup();
+      if (!res.headersSent) {
+        console.error(`[yt-dlp error code ${code}]:`, stderrOutput.slice(-500));
+        res.status(500).json({
+          error: 'Stream extraction failed',
+          details: stderrOutput.slice(-500) || `Process exited with code ${code}`,
+        });
+      }
+      return;
     }
-  });
 
-  req.on('close', () => {
-    ytdlp.kill();
+    if (!fs.existsSync(tempFilePath) || fs.statSync(tempFilePath).size < 1024) {
+      cleanup();
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'Video slice extraction produced an empty or missing file',
+          details: stderrOutput.slice(-500),
+        });
+      }
+      return;
+    }
+
+    const fileSize = fs.statSync(tempFilePath).size;
+    console.log(`[ClipForge Stream] Successfully created clip: ${fileSize} bytes. Sending to client...`);
+
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', 'inline; filename="youtube_clip.mp4"');
+    res.setHeader('Content-Length', fileSize);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    res.sendFile(tempFilePath, (sendErr) => {
+      cleanup();
+      if (sendErr && !res.headersSent) {
+        console.error('[ClipForge Stream sendFile error]', sendErr);
+      }
+    });
   });
 });
 
