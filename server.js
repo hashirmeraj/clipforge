@@ -89,12 +89,15 @@ app.get('/api/info', (req, res) => {
 
   const cookiePath = getCookieFilePath();
   const infoArgs = [
+    '-v',
     '--dump-json',
     '--skip-download',
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+    '--extractor-args',
+    'youtube:player-client=mweb,tv,web_safari',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
@@ -225,11 +228,14 @@ app.get('/api/stream', (req, res) => {
 
   const cookiePath = getCookieFilePath();
   const args = [
+    '-v',
     '--no-playlist',
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+    '--extractor-args',
+    'youtube:player-client=mweb,tv,web_safari',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(isFullVideo
