@@ -21,6 +21,47 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'ClipForge Unified Server', timestamp: Date.now() });
 });
 
+// Launch local BotGuard PO-Token provider on port 4416 if present
+function startPotProvider() {
+  const possiblePaths = [
+    '/opt/pot-provider/build/main.js',
+    '/opt/pot-provider/dist/main.js',
+    '/opt/pot-provider/main.js',
+  ];
+  const potPath = possiblePaths.find((p) => fs.existsSync(p));
+  if (potPath) {
+    console.log(`[ClipForge] Starting BotGuard PO-Token provider from ${potPath}...`);
+    try {
+      const potProcess = spawn('node', [potPath, '--host', '127.0.0.1', '--port', '4416'], {
+        cwd: path.dirname(potPath),
+        stdio: 'inherit',
+      });
+      potProcess.on('error', (err) => {
+        console.warn('[ClipForge POT Provider] Spawn error:', err.message);
+      });
+      process.on('exit', () => {
+        try {
+          potProcess.kill();
+        } catch {}
+      });
+    } catch (err) {
+      console.warn('[ClipForge POT Provider] Failed to launch:', err.message);
+    }
+  } else {
+    console.log('[ClipForge] No local POT provider found (skipping)');
+  }
+}
+startPotProvider();
+
+// Helper: Resolve proxy argument if provided via environment
+function getProxyArg() {
+  const p = process.env.PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+  if (p && p.trim()) {
+    return ['--proxy', p.trim()];
+  }
+  return [];
+}
+
 // Helper: Resolve cookies file if provided via env or disk
 function getCookieFilePath() {
   if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 10) {
@@ -53,7 +94,10 @@ app.get('/api/info', (req, res) => {
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
+    'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+    '--extractor-args',
     'youtube:player_client=tv_embedded,android,ios',
+    ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
   ];
@@ -174,7 +218,10 @@ app.get('/api/stream', (req, res) => {
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
+    'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+    '--extractor-args',
     'youtube:player_client=tv_embedded,android,ios',
+    ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     '--download-sections',
     section,
