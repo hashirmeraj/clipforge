@@ -235,7 +235,10 @@ export const VideoImporter: React.FC = () => {
           )}
 
           {tab === 'youtube' && (
-            <YouTubeUrlInput onSwitchToLocalUpload={() => setTab('local')} />
+            <YouTubeUrlInput
+              onSwitchToLocalUpload={() => setTab('local')}
+              onFileSelect={handleFile}
+            />
           )}
 
           {tab === 'cors-url' && (

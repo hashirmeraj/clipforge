@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Youtube,
   AlertTriangle,
@@ -9,18 +9,27 @@ import {
   Play,
   Image as ImageIcon,
   Video,
-  ShieldCheck,
+  Download,
+  FileVideo,
+  Sparkles,
 } from 'lucide-react';
 import { parseYouTubeUrl } from '../../utils/format';
 
 interface YouTubeUrlInputProps {
   onSwitchToLocalUpload: () => void;
+  onFileSelect: (file: File) => void;
 }
 
-export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLocalUpload }) => {
+export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
+  onSwitchToLocalUpload,
+  onFileSelect,
+}) => {
   const [urlInput, setUrlInput] = useState('');
   const [previewMode, setPreviewMode] = useState<'embed' | 'thumbnail'>('embed');
   const [thumbError, setThumbError] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dropInputRef = useRef<HTMLInputElement | null>(null);
+
   const parsed = parseYouTubeUrl(urlInput);
 
   const kindLabel =
@@ -32,8 +41,30 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
       ? 'YouTube Live / VOD Link'
       : 'Standard YouTube Video Link';
 
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && (file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(file.name))) {
+      onFileSelect(file);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onFileSelect(file);
+    }
+  };
+
+  // Safe external helper link to download MP4 without ad popups
+  const cobaltHelperUrl = parsed.valid
+    ? `https://cobalt.tools/#${encodeURIComponent(parsed.watchUrl || urlInput)}`
+    : 'https://cobalt.tools/';
+
   return (
     <div className="space-y-4">
+      {/* URL Input Bar */}
       <div>
         <label className="block text-xs font-medium text-zinc-300">
           YouTube Video URL (watch, youtu.be, /shorts, or /live)
@@ -80,10 +111,7 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
               Recognized: <span className="text-zinc-200">{kindLabel}</span> (ID:{' '}
               <span className="font-mono text-zinc-300">{parsed.videoId}</span>)
             </span>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
-                <ShieldCheck className="h-3 w-3 text-emerald-400" /> No-Cookie Sandbox
-              </span>
+            <div className="flex items-center gap-2">
               <a
                 href={parsed.watchUrl}
                 target="_blank"
@@ -97,13 +125,11 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
         )}
       </div>
 
-      {/* YouTube Embedded Preview / Thumbnail Card */}
+      {/* Video Preview & Download Helper */}
       {parsed.valid && parsed.videoId && (
-        <div className="space-y-2">
+        <div className="space-y-3 rounded-xl border border-white/10 bg-[#0e1118] p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-              Video Preview
-            </span>
+            <span className="text-xs font-semibold text-zinc-200">Video Preview</span>
             <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
               <button
                 type="button"
@@ -127,12 +153,12 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
                 }`}
               >
                 <ImageIcon className="h-3 w-3" />
-                Thumbnail Card
+                Thumbnail
               </button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-black shadow-lg">
+          <div className="overflow-hidden rounded-lg border border-white/10 bg-black shadow-lg">
             {previewMode === 'embed' && parsed.embedUrl ? (
               <div className="relative aspect-video w-full bg-zinc-950">
                 <iframe
@@ -152,17 +178,17 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
                   alt="YouTube video thumbnail preview"
                   className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[1px] transition group-hover:bg-black/25">
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[1px]">
                   <a
                     href={parsed.watchUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white shadow-2xl transition hover:scale-110 hover:bg-red-500"
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white shadow-2xl transition hover:scale-110 hover:bg-red-500"
                     title="Watch video on YouTube"
                   >
-                    <Play className="ml-1 h-6 w-6 fill-current" />
+                    <Play className="ml-1 h-5 w-5 fill-current" />
                   </a>
-                  <p className="mt-3 text-xs font-medium text-white/90 drop-shadow">
+                  <p className="mt-2 text-xs font-medium text-white/90 drop-shadow">
                     Click to watch on YouTube
                   </p>
                 </div>
@@ -170,68 +196,87 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({ onSwitchToLoca
             )}
           </div>
 
-          <p className="text-[11px] text-zinc-500">
-            {previewMode === 'embed' ? (
-              <span>
-                Note: Some video owners disable external embedding on YouTube. If the player says
-                "Video unavailable", switch to{' '}
-                <button
-                  type="button"
-                  onClick={() => setPreviewMode('thumbnail')}
-                  className="text-violet-400 underline hover:text-violet-300"
-                >
-                  Thumbnail Card
-                </button>{' '}
-                or open directly on YouTube.
-              </span>
-            ) : (
-              <span>High-resolution thumbnail extracted from YouTube CDN.</span>
-            )}
-          </p>
+          {/* 1-Click Fast Workflow */}
+          <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.06] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-violet-200 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+                  Step 1: Download Clean MP4
+                </p>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  Open clean downloader or grab from YouTube Studio
+                </p>
+              </div>
+              <a
+                href={cobaltHelperUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-500"
+              >
+                <Download className="h-3.5 w-3.5" />
+                1-Click Download MP4
+                <ExternalLink className="h-3 w-3 opacity-70" />
+              </a>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Cross-Origin Analysis Explanation & Solutions */}
-      <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4">
-        <div className="flex items-start gap-3">
-          <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
-          <div className="space-y-2.5 text-xs leading-relaxed text-zinc-300">
-            <div className="font-semibold text-amber-200">
-              Why Direct YouTube Video Clipping Requires a Local Video File
-            </div>
+      {/* Step 2: Integrated Dropzone directly in YouTube Tab */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => dropInputRef.current?.click()}
+        className={`group relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition ${
+          isDragging
+            ? 'border-violet-500 bg-violet-500/10'
+            : 'border-white/15 bg-white/[0.02] hover:border-violet-500/50 hover:bg-white/[0.04]'
+        }`}
+      >
+        <input
+          ref={dropInputRef}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime,video/x-matroska"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 text-violet-400">
+          <FileVideo className="h-6 w-6" />
+        </div>
+        <p className="mt-3 text-sm font-semibold text-white">
+          Step 2: Drop your downloaded video file here
+        </p>
+        <p className="mt-1 text-xs text-zinc-400">
+          Drop the <span className="text-zinc-200 font-medium">MP4 or WebM</span> file here or click
+          to browse
+        </p>
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-zinc-200 group-hover:bg-violet-600 group-hover:text-white transition">
+          <Upload className="h-3.5 w-3.5" />
+          Choose Local Video File
+        </div>
+      </div>
+
+      {/* Honest Technical Explanation (Why this 2-step flow exists) */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+        <div className="flex items-start gap-2.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+          <div className="space-y-1 text-[11px] leading-relaxed text-zinc-400">
+            <span className="font-semibold text-zinc-300">
+              Why can't browsers clip directly from an embedded YouTube player?
+            </span>
             <p>
-              ClipForge runs <strong className="text-zinc-100">100% locally in your browser</strong>{' '}
-              with zero backend servers. Browsers strictly block client-side JavaScript (Canvas &amp;
-              Web Audio) from reading raw pixels or audio samples from cross-origin YouTube players
-              due to browser CORS and iframe security policies.
+              An embedded player only lets you <em>watch</em> a video. For ClipForge's AI to detect
+              kills/explosions, read audio waveforms, and burn local Whisper subtitles, the browser
+              must access raw video pixels and audio bytes. All browsers block web apps from
+              inspecting video data across different domains (CORS security). Loading the MP4 into
+              the dropzone runs 100% locally in your browser with zero server costs, zero quality
+              loss, and total privacy!
             </p>
-            <div className="rounded-lg border border-white/5 bg-black/30 p-2.5 space-y-1.5 text-zinc-400">
-              <p className="font-medium text-zinc-200">To clip gameplay highlights right now:</p>
-              <ul className="list-inside list-disc space-y-1 pl-1">
-                <li>
-                  <strong className="text-zinc-200">Option 1 (Fastest &amp; Best Quality):</strong>{' '}
-                  Download your gameplay recording via YouTube Studio (or use your local OBS /
-                  ShadowPlay file) and upload it in the{' '}
-                  <span className="text-violet-300 font-semibold">Local Video Upload</span> tab.
-                </li>
-                <li>
-                  <strong className="text-zinc-200">Option 2 (Direct Web Stream):</strong> If your
-                  video is hosted on a CORS-enabled server (e.g. Discord, Cloudflare R2, Google
-                  Drive direct MP4 link), use the{' '}
-                  <span className="text-violet-300 font-semibold">Direct CORS URL</span> tab.
-                </li>
-              </ul>
-            </div>
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={onSwitchToLocalUpload}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-violet-500"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Upload Local Video File Instead
-              </button>
-            </div>
           </div>
         </div>
       </div>
