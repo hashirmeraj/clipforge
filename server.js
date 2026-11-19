@@ -94,10 +94,12 @@ app.get('/api/info', (req, res) => {
     '--skip-download',
     '--no-warnings',
     '--geo-bypass',
+    '--js-runtimes',
+    'node',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
     '--extractor-args',
-    'youtube:player-client=android,ios,mweb,tv_embedded',
+    'youtube:player-client=tv,mweb,web_safari,web',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     url,
@@ -117,8 +119,24 @@ app.get('/api/info', (req, res) => {
     process.stderr.write(d);
   });
 
-  ytdlp.on('close', (code) => {
+  ytdlp.on('close', async (code) => {
     if (code !== 0) {
+      // Fallback to official YouTube oEmbed API so metadata never fails for public videos
+      try {
+        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+        if (oembedRes.ok) {
+          const oembedData = await oembedRes.json();
+          return res.json({
+            title: oembedData.title || 'YouTube Video',
+            duration: 0,
+            author: oembedData.author_name || 'YouTube Creator',
+            thumbnail: oembedData.thumbnail_url || '',
+          });
+        }
+      } catch (err) {
+        console.warn('[oEmbed fallback failed]:', err.message);
+      }
+
       return res.status(500).json({
         error: 'Failed to extract video metadata',
         details: stderrData.slice(0, 300),
@@ -218,10 +236,14 @@ app.get('/api/stream', (req, res) => {
     return res.status(400).json({ error: 'Missing url query parameter' });
   }
 
-  // Format MM:SS for yt-dlp section
+  // Format HH:MM:SS or MM:SS for yt-dlp section
   const formatTime = (s) => {
-    const m = Math.floor(s / 60);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
+    if (h > 0) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
@@ -234,10 +256,12 @@ app.get('/api/stream', (req, res) => {
     '--no-playlist',
     '--no-warnings',
     '--geo-bypass',
+    '--js-runtimes',
+    'node',
     '--extractor-args',
     'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
     '--extractor-args',
-    'youtube:player-client=android,ios,mweb,tv_embedded',
+    'youtube:player-client=tv,mweb,web_safari,web',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(isFullVideo
@@ -248,7 +272,7 @@ app.get('/api/stream', (req, res) => {
           '--force-keyframes-at-cuts',
         ]),
     '-f',
-    'best[height<=720]/best[ext=mp4]/bestvideo[height<=720]+bestaudio/best',
+    'bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best',
     '--remux-video',
     'mp4',
     '--postprocessor-args',

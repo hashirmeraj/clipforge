@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     librsvg2-2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install latest yt-dlp and bgutil POT provider plugin
-RUN pip3 install --no-cache-dir --break-system-packages -U yt-dlp bgutil-ytdlp-pot-provider
+# Install latest yt-dlp, yt-dlp-ejs (JS challenge solvers), and bgutil POT provider plugin
+RUN pip3 install --no-cache-dir --break-system-packages -U yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider
 
 # Copy prebuilt BotGuard POT provider server
 COPY --from=pot-provider /app /opt/pot-provider
