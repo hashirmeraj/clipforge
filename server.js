@@ -54,9 +54,15 @@ function startPotProvider() {
 startPotProvider();
 
 // Helper: Resolve proxy argument if provided via environment
+let loggedProxy = false;
 function getProxyArg() {
   const p = process.env.PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
   if (p && p.trim()) {
+    if (!loggedProxy) {
+      const masked = p.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
+      console.log(`[ClipForge] Outbound Proxy active: ${masked}`);
+      loggedProxy = true;
+    }
     return ['--proxy', p.trim()];
   }
   return [];
