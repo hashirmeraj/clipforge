@@ -57,9 +57,11 @@ export function formatBytes(bytes: number): string {
 export interface ParsedYouTubeUrl {
   valid: boolean;
   videoId?: string;
-  kind?: 'standard' | 'short-link' | 'shorts';
+  kind?: 'standard' | 'short-link' | 'shorts' | 'live';
   embedUrl?: string;
   watchUrl?: string;
+  thumbnailUrl?: string;
+  hqThumbnailUrl?: string;
 }
 
 export function parseYouTubeUrl(input: string): ParsedYouTubeUrl {
@@ -81,7 +83,12 @@ export function parseYouTubeUrl(input: string): ParsedYouTubeUrl {
         videoId = seg;
         kind = 'short-link';
       }
-    } else if (host === 'youtube.com' || host === 'm.youtube.com') {
+    } else if (
+      host === 'youtube.com' ||
+      host === 'm.youtube.com' ||
+      host === 'music.youtube.com' ||
+      host === 'gaming.youtube.com'
+    ) {
       if (url.pathname === '/watch') {
         const v = url.searchParams.get('v');
         if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) {
@@ -94,7 +101,19 @@ export function parseYouTubeUrl(input: string): ParsedYouTubeUrl {
           videoId = seg;
           kind = 'shorts';
         }
+      } else if (url.pathname.startsWith('/live/')) {
+        const seg = url.pathname.split('/').filter(Boolean)[1];
+        if (seg && /^[a-zA-Z0-9_-]{11}$/.test(seg)) {
+          videoId = seg;
+          kind = 'live';
+        }
       } else if (url.pathname.startsWith('/embed/')) {
+        const seg = url.pathname.split('/').filter(Boolean)[1];
+        if (seg && /^[a-zA-Z0-9_-]{11}$/.test(seg)) {
+          videoId = seg;
+          kind = 'standard';
+        }
+      } else if (url.pathname.startsWith('/v/')) {
         const seg = url.pathname.split('/').filter(Boolean)[1];
         if (seg && /^[a-zA-Z0-9_-]{11}$/.test(seg)) {
           videoId = seg;
@@ -108,8 +127,11 @@ export function parseYouTubeUrl(input: string): ParsedYouTubeUrl {
       valid: true,
       videoId,
       kind,
-      embedUrl: `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`,
+      // Use youtube-nocookie.com to avoid 3rd-party cookie blocks across modern browsers
+      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1`,
       watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      hqThumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
     };
   } catch {
     return { valid: false };

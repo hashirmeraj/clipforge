@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://clipforge-pi-ecru.vercel.app/sitemap.xml
