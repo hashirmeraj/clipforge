@@ -28,7 +28,15 @@ app.get('/api/info', (req, res) => {
     return res.status(400).json({ error: 'Missing url query parameter' });
   }
 
-  const ytdlp = spawn('yt-dlp', ['--dump-json', '--skip-download', '--no-warnings', url]);
+  const ytdlp = spawn('yt-dlp', [
+    '--dump-json',
+    '--skip-download',
+    '--no-warnings',
+    '--geo-bypass',
+    '--extractor-args',
+    'youtube:player_client=android,ios,web',
+    url,
+  ]);
   let stdoutData = '';
   let stderrData = '';
 
@@ -87,6 +95,9 @@ app.get('/api/stream', (req, res) => {
   const args = [
     '--no-playlist',
     '--no-warnings',
+    '--geo-bypass',
+    '--extractor-args',
+    'youtube:player_client=android,ios,web',
     '--download-sections',
     section,
     '-f',
