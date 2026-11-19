@@ -1,6 +1,10 @@
 FROM brainicism/bgutil-ytdlp-pot-provider:node AS pot-provider
+FROM denoland/deno:bin AS deno-bin
 
-FROM node:20-slim
+FROM node:22-slim
+
+# Copy Deno binary for yt-dlp EJS JavaScript challenges
+COPY --from=deno-bin /deno /usr/local/bin/deno
 
 # Install ffmpeg, python3, pip, curl, ca-certificates, and canvas/botguard runtime libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
