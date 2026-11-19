@@ -43,7 +43,7 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
   // Live Screen / Tab Recording state (Solution 2)
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
-  const [targetDuration, setTargetDuration] = useState<number>(30); // default 30s clip
+  const [targetDuration, setTargetDuration] = useState<number>(0); // 0 = Full Video (default)
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingWarning, setRecordingWarning] = useState<string | null>(null);
 
@@ -102,11 +102,16 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
     setStreamProgress('Connecting to Railway stream engine...');
 
     try {
+      const isFull = targetDuration === 0;
       const endpoint = window.location.origin.includes('railway')
-        ? `/api/stream?url=${encodeURIComponent(urlInput)}&duration=${targetDuration || 60}`
-        : `https://clipforge-production-1b2a5d93.up.railway.app/api/stream?url=${encodeURIComponent(urlInput)}&duration=${targetDuration || 60}`;
+        ? `/api/stream?url=${encodeURIComponent(urlInput)}&full=${isFull}&duration=${targetDuration}`
+        : `https://clipforge-production-1b2a5d93.up.railway.app/api/stream?url=${encodeURIComponent(urlInput)}&full=${isFull}&duration=${targetDuration}`;
 
-      setStreamProgress('Extracting video stream (720p H.264 / AAC)...');
+      setStreamProgress(
+        isFull
+          ? 'Extracting Full Video stream (720p H.264 / AAC)...'
+          : `Extracting Video segment (${Math.round(targetDuration / 60)}m)...`
+      );
       const response = await fetch(endpoint);
 
       if (!response.ok) {
@@ -121,7 +126,36 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
       }
 
       setStreamProgress('Receiving video buffer into browser memory...');
-      const blob = await response.blob();
+      const reader = response.body?.getReader();
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      let blob: Blob;
+
+      if (reader) {
+        const chunks: Uint8Array<ArrayBuffer>[] = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.byteLength;
+            const mb = (received / (1024 * 1024)).toFixed(1);
+            if (contentLength > 0) {
+              const pct = Math.round((received / contentLength) * 100);
+              setStreamProgress(
+                isFull
+                  ? `Receiving Full Video into Memory: ${mb} MB (${pct}%)...`
+                  : `Receiving Video Segment: ${mb} MB (${pct}%)...`
+              );
+            } else {
+              setStreamProgress(`Receiving Video into Memory: ${mb} MB...`);
+            }
+          }
+        }
+        blob = new Blob(chunks, { type: 'video/mp4' });
+      } else {
+        blob = await response.blob();
+      }
 
       if (blob.size < 1024) {
         throw new Error('Received an empty video stream from the server.');
@@ -130,10 +164,12 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
       setStreamProgress('Loading into ClipForge AI engine...');
       const cleanName = parsed.videoId
         ? `YouTube_${parsed.videoId}_${Date.now()}.mp4`
-        : `YouTube_Clip_${Date.now()}.mp4`;
+        : `YouTube_Full_${Date.now()}.mp4`;
 
       const videoFile = new File([blob], cleanName, { type: 'video/mp4' });
-      (videoFile as any)._customDuration = targetDuration || 60;
+      if (!isFull) {
+        (videoFile as any)._customDuration = targetDuration;
+      }
       setIsStreaming(false);
       setStreamProgress('');
       onFileSelect(videoFile);
@@ -468,22 +504,27 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
                 </div>
               </div>
 
-              {/* Duration Picker */}
-              <div className="flex items-center gap-1 text-xs text-zinc-300">
+              {/* Duration / Fetch Mode Picker */}
+              <div className="flex flex-wrap items-center gap-1 text-xs text-zinc-300">
                 <Clock className="h-3 w-3 text-zinc-400" />
-                <span className="text-[10px] text-zinc-400">Clip:</span>
-                {[15, 30, 60, 90].map((dur) => (
+                <span className="text-[10px] text-zinc-400">Mode:</span>
+                {[
+                  { label: 'Full Video (1-3 hrs)', val: 0 },
+                  { label: '30 min', val: 1800 },
+                  { label: '15 min', val: 900 },
+                  { label: '60 min', val: 3600 },
+                ].map((opt) => (
                   <button
-                    key={dur}
+                    key={opt.val}
                     type="button"
-                    onClick={() => setTargetDuration(dur)}
-                    className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
-                      targetDuration === dur
-                        ? 'bg-violet-600 text-white shadow-sm'
+                    onClick={() => setTargetDuration(opt.val)}
+                    className={`rounded px-2.5 py-0.5 text-[11px] font-semibold transition ${
+                      targetDuration === opt.val
+                        ? 'bg-violet-600 text-white shadow-sm ring-1 ring-violet-400'
                         : 'bg-white/5 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    {dur}s
+                    {opt.label}
                   </button>
                 ))}
               </div>
@@ -499,12 +540,16 @@ export const YouTubeUrlInput: React.FC<YouTubeUrlInputProps> = ({
               {isStreaming ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{streamProgress || 'Streaming Video...'}</span>
+                  <span>{streamProgress || 'Fetching Full Video Stream...'}</span>
                 </>
               ) : (
                 <>
                   <Zap className="h-4 w-4 fill-amber-300 text-amber-300" />
-                  <span>⚡ 1-Click Stream &amp; Clip Video Now</span>
+                  <span>
+                    {targetDuration === 0
+                      ? '⚡ 1-Click Fetch Full Video for AI Analysis'
+                      : `⚡ 1-Click Fetch ${Math.round(targetDuration / 60)} Min Segment`}
+                  </span>
                 </>
               )}
             </button>

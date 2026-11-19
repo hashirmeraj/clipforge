@@ -137,7 +137,7 @@ app.get('/api/info', (req, res) => {
 });
 
 // Helper: Fallback to Cobalt API to get a direct stream if yt-dlp is rate-limited on datacenter IP
-async function tryCobaltFallback(videoUrl, startSec, durationSec, outPath) {
+async function tryCobaltFallback(videoUrl, startSec, durationSec, outPath, isFull = false) {
   try {
     console.log(`[ClipForge Stream] Attempting Cobalt fallback for: ${videoUrl}`);
     const cobaltRes = await fetch('https://api.cobalt.tools/', {
@@ -159,20 +159,24 @@ async function tryCobaltFallback(videoUrl, startSec, durationSec, outPath) {
 
     console.log(`[ClipForge Stream] Cobalt returned stream URL, slicing with FFmpeg...`);
     return new Promise((resolve) => {
-      const ffmpeg = spawn('ffmpeg', [
-        '-ss',
-        String(startSec),
-        '-i',
-        streamUrl,
-        '-t',
-        String(durationSec),
-        '-c',
-        'copy',
-        '-movflags',
-        '+faststart',
-        '-y',
-        outPath,
-      ]);
+      const ffmpegArgs = isFull
+        ? ['-i', streamUrl, '-c', 'copy', '-movflags', '+faststart', '-y', outPath]
+        : [
+            '-ss',
+            String(startSec),
+            '-i',
+            streamUrl,
+            '-t',
+            String(durationSec),
+            '-c',
+            'copy',
+            '-movflags',
+            '+faststart',
+            '-y',
+            outPath,
+          ];
+
+      const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
       ffmpeg.on('close', (code) => {
         if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
@@ -192,8 +196,18 @@ async function tryCobaltFallback(videoUrl, startSec, durationSec, outPath) {
 
 // 1-Click Stream YouTube Video directly into browser memory
 app.get('/api/stream', (req, res) => {
+  req.setTimeout(0);
+  res.setTimeout(0);
+
   const url = req.query.url;
-  const durationSec = Math.min(Math.max(parseInt(req.query.duration, 10) || 60, 5), 180); // clamp 5s to 3m
+  const isFullVideo =
+    req.query.full === 'true' ||
+    req.query.duration === '0' ||
+    req.query.duration === 'full' ||
+    !req.query.duration;
+
+  const rawDuration = parseInt(req.query.duration, 10) || 0;
+  const durationSec = isFullVideo ? 0 : Math.max(rawDuration, 15);
   const startSec = Math.max(parseInt(req.query.startTime, 10) || 0, 0);
   const endSec = startSec + durationSec;
 
@@ -208,7 +222,6 @@ app.get('/api/stream', (req, res) => {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  const section = `*${formatTime(startSec)}-${formatTime(endSec)}`;
   const tempId = crypto.randomBytes(6).toString('hex');
   const tempFilePath = path.join(os.tmpdir(), `clip_${Date.now()}_${tempId}.mp4`);
 
@@ -223,11 +236,15 @@ app.get('/api/stream', (req, res) => {
     'youtube:player_client=tv_embedded,android,ios',
     ...getProxyArg(),
     ...(cookiePath ? ['--cookies', cookiePath] : []),
-    '--download-sections',
-    section,
+    ...(isFullVideo
+      ? []
+      : [
+          '--download-sections',
+          `*${formatTime(startSec)}-${formatTime(endSec)}`,
+          '--force-keyframes-at-cuts',
+        ]),
     '-f',
     'best[height<=720]/bestvideo[height<=720]+bestaudio/best',
-    '--force-keyframes-at-cuts',
     '--merge-output-format',
     'mp4',
     '--postprocessor-args',
@@ -237,7 +254,11 @@ app.get('/api/stream', (req, res) => {
     url,
   ];
 
-  console.log(`[ClipForge Stream] Starting download: ${url} (range: ${section}) -> ${tempFilePath}`);
+  console.log(
+    `[ClipForge Stream] Starting download: ${url} (${
+      isFullVideo ? 'FULL VIDEO' : `range: *${formatTime(startSec)}-${formatTime(endSec)}`
+    }) -> ${tempFilePath}`
+  );
 
   const ytdlp = spawn('yt-dlp', args);
   let stderrOutput = '';
@@ -278,7 +299,7 @@ app.get('/api/stream', (req, res) => {
       success = true;
     } else {
       console.warn(`[yt-dlp exited with code ${code}], attempting Cobalt fallback...`);
-      success = await tryCobaltFallback(url, startSec, durationSec, tempFilePath);
+      success = await tryCobaltFallback(url, startSec, durationSec, tempFilePath, isFullVideo);
     }
 
     if (!success || !fs.existsSync(tempFilePath) || fs.statSync(tempFilePath).size < 1024) {
