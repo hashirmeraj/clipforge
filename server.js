@@ -34,7 +34,7 @@ app.get('/api/info', (req, res) => {
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
-    'youtube:player_client=android,ios,web',
+    'youtube:player_client=tv_embedded,android,ios',
     url,
   ]);
   let stdoutData = '';
@@ -70,6 +70,60 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+// Helper: Fallback to Cobalt API to get a direct stream if yt-dlp is rate-limited on datacenter IP
+async function tryCobaltFallback(videoUrl, startSec, durationSec, outPath) {
+  try {
+    console.log(`[ClipForge Stream] Attempting Cobalt fallback for: ${videoUrl}`);
+    const cobaltRes = await fetch('https://api.cobalt.tools/', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: videoUrl,
+        videoQuality: '720',
+      }),
+    });
+
+    if (!cobaltRes.ok) return false;
+    const data = await cobaltRes.json();
+    const streamUrl = data.url;
+    if (!streamUrl) return false;
+
+    console.log(`[ClipForge Stream] Cobalt returned stream URL, slicing with FFmpeg...`);
+    return new Promise((resolve) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-ss',
+        String(startSec),
+        '-i',
+        streamUrl,
+        '-t',
+        String(durationSec),
+        '-c',
+        'copy',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outPath,
+      ]);
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      });
+
+      ffmpeg.on('error', () => resolve(false));
+    });
+  } catch (err) {
+    console.error('[ClipForge Stream] Cobalt fallback error:', err.message);
+    return false;
+  }
+}
+
 // 1-Click Stream YouTube Video directly into browser memory
 app.get('/api/stream', (req, res) => {
   const url = req.query.url;
@@ -97,11 +151,11 @@ app.get('/api/stream', (req, res) => {
     '--no-warnings',
     '--geo-bypass',
     '--extractor-args',
-    'youtube:player_client=android,ios,web',
+    'youtube:player_client=tv_embedded,android,ios',
     '--download-sections',
     section,
     '-f',
-    'bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best',
+    'best[height<=720]/bestvideo[height<=720]+bestaudio/best',
     '--force-keyframes-at-cuts',
     '--merge-output-format',
     'mp4',
@@ -147,25 +201,22 @@ app.get('/api/stream', (req, res) => {
     }
   });
 
-  ytdlp.on('close', (code) => {
-    if (code !== 0) {
+  ytdlp.on('close', async (code) => {
+    let success = false;
+    if (code === 0 && fs.existsSync(tempFilePath) && fs.statSync(tempFilePath).size >= 1024) {
+      success = true;
+    } else {
+      console.warn(`[yt-dlp exited with code ${code}], attempting Cobalt fallback...`);
+      success = await tryCobaltFallback(url, startSec, durationSec, tempFilePath);
+    }
+
+    if (!success || !fs.existsSync(tempFilePath) || fs.statSync(tempFilePath).size < 1024) {
       cleanup();
       if (!res.headersSent) {
-        console.error(`[yt-dlp error code ${code}]:`, stderrOutput.slice(-500));
+        console.error(`[Stream extraction failed]:`, stderrOutput.slice(-500));
         res.status(500).json({
           error: 'Stream extraction failed',
           details: stderrOutput.slice(-500) || `Process exited with code ${code}`,
-        });
-      }
-      return;
-    }
-
-    if (!fs.existsSync(tempFilePath) || fs.statSync(tempFilePath).size < 1024) {
-      cleanup();
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: 'Video slice extraction produced an empty or missing file',
-          details: stderrOutput.slice(-500),
         });
       }
       return;
